@@ -1,32 +1,82 @@
+import { existsSync, readdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
 // ─── Logos Data Paths ────────────────────────────────────────────────────────
 
-const LOGOS_BASE = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "Logos4",
-  "Documents",
-  "a3wo155q.w14"
-);
+type Platform = NodeJS.Platform;
 
-export const LOGOS_DATA_DIR =
-  process.env.LOGOS_DATA_DIR ?? LOGOS_BASE;
+interface ResolvePathOptions {
+  platform?: Platform;
+  homeDir?: string;
+  env?: NodeJS.ProcessEnv;
+}
+
+const DEFAULT_INSTANCE_ID = "a3wo155q.w14";
+
+function defaultDocumentsRoot(platform: Platform, homeDir: string, env: NodeJS.ProcessEnv): string {
+  if (platform === "win32") {
+    const localAppData = env.LOCALAPPDATA ?? join(homeDir, "AppData", "Local");
+    return join(localAppData, "Logos", "Documents");
+  }
+
+  return join(homeDir, "Library", "Application Support", "Logos4", "Documents");
+}
+
+function defaultCatalogRoot(platform: Platform, homeDir: string, env: NodeJS.ProcessEnv): string {
+  if (platform === "win32") {
+    const localAppData = env.LOCALAPPDATA ?? join(homeDir, "AppData", "Local");
+    return join(localAppData, "Logos", "Data");
+  }
+
+  return join(homeDir, "Library", "Application Support", "Logos4", "Data");
+}
+
+function findInstanceDir(root: string, markerSegments: string[]): string | null {
+  if (!existsSync(root)) return null;
+
+  const entries = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(root, entry.name));
+
+  for (const dir of entries) {
+    if (existsSync(join(dir, ...markerSegments))) return dir;
+  }
+
+  return null;
+}
+
+function resolveDefaultInstanceDir(root: string, markerSegments: string[]): string {
+  const detected = findInstanceDir(root, markerSegments);
+  if (detected) return detected;
+  return join(root, DEFAULT_INSTANCE_ID);
+}
+
+export function resolveLogosPaths(options: ResolvePathOptions = {}): {
+  dataDir: string;
+  catalogDir: string;
+} {
+  const platform = options.platform ?? process.platform;
+  const homeDir = options.homeDir ?? homedir();
+  const env = options.env ?? process.env;
+
+  const dataRoot = defaultDocumentsRoot(platform, homeDir, env);
+  const catalogRoot = defaultCatalogRoot(platform, homeDir, env);
+
+  const dataDir =
+    env.LOGOS_DATA_DIR ?? resolveDefaultInstanceDir(dataRoot, ["VisualMarkup", "visualmarkup.db"]);
+  const catalogDir =
+    env.LOGOS_CATALOG_DIR ?? resolveDefaultInstanceDir(catalogRoot, ["LibraryCatalog", "catalog.db"]);
+
+  return { dataDir, catalogDir };
+}
+
+const resolvedPaths = resolveLogosPaths();
+
+export const LOGOS_DATA_DIR = resolvedPaths.dataDir;
 
 // Catalog DB lives under Data/ (not Documents/)
-const LOGOS_CATALOG_BASE = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "Logos4",
-  "Data",
-  "a3wo155q.w14"
-);
-
-export const LOGOS_CATALOG_DIR =
-  process.env.LOGOS_CATALOG_DIR ?? LOGOS_CATALOG_BASE;
+export const LOGOS_CATALOG_DIR = resolvedPaths.catalogDir;
 
 export const DB_PATHS = {
   visualMarkup: join(LOGOS_DATA_DIR, "VisualMarkup", "visualmarkup.db"),

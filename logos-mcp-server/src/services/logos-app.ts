@@ -5,9 +5,35 @@ import type { LogosCommandResult } from "../types.js";
 
 const execFileAsync = promisify(execFile);
 
+interface CommandSpec {
+  command: string;
+  args: string[];
+}
+
+function escapePowerShell(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+export function getOpenUrlCommand(url: string, platform: NodeJS.Platform = process.platform): CommandSpec {
+  if (platform === "darwin") {
+    return { command: "open", args: [url] };
+  }
+
+  if (platform === "win32") {
+    const escaped = escapePowerShell(url);
+    return {
+      command: "powershell",
+      args: ["-NoProfile", "-Command", `Start-Process -FilePath '${escaped}'`],
+    };
+  }
+
+  return { command: "xdg-open", args: [url] };
+}
+
 async function openUrl(url: string): Promise<LogosCommandResult> {
   try {
-    await execFileAsync("open", [url]);
+    const { command, args } = getOpenUrlCommand(url);
+    await execFileAsync(command, args);
     return { success: true, command: url };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -74,11 +100,24 @@ export async function searchAll(query: string): Promise<LogosCommandResult> {
 
 export async function isLogosRunning(): Promise<boolean> {
   try {
-    const { stdout } = await execFileAsync("osascript", [
-      "-e",
-      'tell application "System Events" to (name of processes) contains "Logos"',
-    ]);
-    return stdout.trim() === "true";
+    if (process.platform === "darwin") {
+      const { stdout } = await execFileAsync("osascript", [
+        "-e",
+        'tell application "System Events" to (name of processes) contains "Logos"',
+      ]);
+      return stdout.trim() === "true";
+    }
+
+    if (process.platform === "win32") {
+      const { stdout } = await execFileAsync("powershell", [
+        "-NoProfile",
+        "-Command",
+        'if (Get-Process -Name "Logos" -ErrorAction SilentlyContinue) { "true" } else { "false" }',
+      ]);
+      return stdout.trim().toLowerCase() === "true";
+    }
+
+    return false;
   } catch {
     return false;
   }
