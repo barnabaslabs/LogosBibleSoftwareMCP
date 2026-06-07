@@ -11,8 +11,8 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that c
 
 | Requirement | Details |
 |-------------|---------|
-| **macOS** | Required (uses macOS `open` command and AppleScript for Logos integration) |
-| **Logos Bible Software** | Installed at `/Applications/Logos.app` (tested with v48) |
+| **Operating System** | macOS or Windows |
+| **Logos Bible Software** | Installed and URL protocol handlers registered (`logos4:` and `logosres:`) |
 | **Node.js** | v18+ (v23+ recommended for native `fetch` support) |
 | **Claude Code** | Anthropic's CLI tool ([install guide](https://docs.anthropic.com/en/docs/claude-code)) |
 | **Biblia API Key** | Free key from [bibliaapi.com](https://bibliaapi.com/) |
@@ -170,7 +170,7 @@ LogosInteraction/
 │   │   └── services/
 │   │       ├── reference-parser.ts    # Bible reference normalization
 │   │       ├── biblia-api.ts          # Biblia.com REST API client
-│   │       ├── logos-app.ts           # macOS URL scheme / AppleScript
+│   │       ├── logos-app.ts           # Desktop URL launching + app-status checks (macOS/Windows)
 │   │       ├── sqlite-reader.ts       # Read-only Logos SQLite access
 │   │       └── catalog-reader.ts     # Library catalog search (catalog.db)
 │   └── dist/                          # Built output (after npm run build)
@@ -181,18 +181,21 @@ LogosInteraction/
 The MCP server integrates with Logos through three channels:
 
 - **Biblia API** - Retrieves Bible text and search results via the free REST API from Faithlife (same company as Logos)
-- **macOS URL schemes** - Opens passages, word studies, and factbook entries directly in the Logos app using `logos4:///` URLs
+- **Desktop URL schemes** - Opens passages, word studies, and factbook entries directly in the Logos app using `logos4:///` and `logosres:` URLs
 - **SQLite databases** - Reads your personal data (notes, highlights, favorites, workflows, reading plans) and library catalog directly from the Logos local database files (read-only access, never modifies your data)
 
-## Logos Data Path
+## Logos Data Paths
 
-The server expects Logos data at:
+By default, the server auto-detects an instance folder under platform-specific roots:
 
-```
-~/Library/Application Support/Logos4/Documents/a3wo155q.w14/
-```
+- **macOS**
+  - Documents root: `~/Library/Application Support/Logos4/Documents/`
+  - Catalog root: `~/Library/Application Support/Logos4/Data/`
+- **Windows**
+  - Documents root: `%LOCALAPPDATA%\\Logos\\Documents\\`
+  - Catalog root: `%LOCALAPPDATA%\\Logos\\Data\\`
 
-If your Logos data is at a different path, set the `LOGOS_DATA_DIR` environment variable in `.mcp.json`. The library catalog lives under `Data/` (not `Documents/`) — set `LOGOS_CATALOG_DIR` if your catalog path differs:
+If your Logos data is at a different path, set `LOGOS_DATA_DIR` and/or `LOGOS_CATALOG_DIR` in `.mcp.json`. The library catalog lives under `Data/` (not `Documents/`):
 
 ```json
 {
@@ -202,8 +205,8 @@ If your Logos data is at a different path, set the `LOGOS_DATA_DIR` environment 
       "args": ["logos-mcp-server/dist/index.js"],
       "env": {
         "BIBLIA_API_KEY": "your_key",
-        "LOGOS_DATA_DIR": "/path/to/your/Logos4/Documents/xxxx.w14",
-        "LOGOS_CATALOG_DIR": "/path/to/your/Logos4/Data/xxxx.w14"
+        "LOGOS_DATA_DIR": "/path/to/your/Logos/Documents/xxxx.w14",
+        "LOGOS_CATALOG_DIR": "/path/to/your/Logos/Data/xxxx.w14"
       }
     }
   }
@@ -214,11 +217,13 @@ If your Logos data is at a different path, set the `LOGOS_DATA_DIR` environment 
 
 **"BIBLIA_API_KEY is not set"** - Make sure your `.mcp.json` has the `env` block with your API key.
 
-**"Database not found"** - Your Logos data path may differ. Run `find ~/Library/Application\ Support/Logos4 -name "*.db" -maxdepth 5` to find your databases and update `LOGOS_DATA_DIR`.
+**"Database not found"** - Your Logos data path may differ. Set `LOGOS_DATA_DIR` and `LOGOS_CATALOG_DIR` explicitly in `.mcp.json`.
 
 **Tools don't appear in `/mcp`** - Restart Claude Code. The MCP server is loaded at startup from `.mcp.json`.
 
-**Logos doesn't open passages** - Make sure Logos Bible Software is running before using `navigate_passage`, `open_word_study`, or `open_factbook`.
+**On Windows, Logos links do not open** - Reinstall or repair Logos so `logos4:` and `logosres:` URL protocols are registered in Windows.
+
+**Logos doesn't open passages** - Make sure Logos Bible Software is installed and can open `logos4:` links from your OS before using `navigate_passage`, `open_word_study`, or `open_factbook`.
 
 ## License
 
